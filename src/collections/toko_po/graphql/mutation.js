@@ -53,10 +53,29 @@ const paymentProcess = {
   }),
   args: {
     _id: { type: GraphQLID },
-    session_id: { type: GraphQLString }
+    session_id: { type: GraphQLString },
+    otp: { type: GraphQLString },
+    otpRefNum: { type: GraphQLString }
   },
   async resolve (parent, args, context) {
     return Services.paymentProcess(args, context)
+  }
+}
+const paymentProcessSendOtp = {
+  type: new GraphQLObjectType({
+    name: 'paymentProcessSendOtpResponse',
+    fields: () => ({
+      status: { type: GraphQLInt },
+      error: { type: GraphQLString },
+      otpRefNum: { type: GraphQLString }
+    })
+  }),
+  args: {
+    email: { type: GraphQLString },
+    session_id: { type: GraphQLString }
+  },
+  async resolve (parent, args, context) {
+    return Services.paymentProcessSendOtp(args, context)
   }
 }
 const updateData = {
@@ -88,11 +107,30 @@ const deleteData = {
     return Services['doDelete' + Manifest.entity](args, context)
   }
 }
+const purchaseorderCheckStatusRequestOtp = {
+  type: new GraphQLObjectType({
+    name: 'purchaseorderCheckStatusRequestOtpResponse',
+    fields: () => ({
+      status: { type: GraphQLInt },
+      error: { type: GraphQLString },
+      otpRefNum: { type: GraphQLString }
+    })
+  }),
+  args: {
+    email: { type: GraphQLString },
+    trxid: { type: GraphQLString }
+  },
+  async resolve (parent, args, context) {
+    return Services.purchaseorderCheckStatusRequestOtp(args, context)
+  }
+}
 
 module.exports = {
   ['create' + Manifest.entity]: createData,
   ['update' + Manifest.entity]: updateData,
   ['delete' + Manifest.entity]: deleteData,
   checkoutProcess,
-  paymentProcess
+  paymentProcess,
+  paymentProcessSendOtp,
+  purchaseorderCheckStatusRequestOtp
 }

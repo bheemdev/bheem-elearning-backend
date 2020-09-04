@@ -14,6 +14,8 @@ const TokoTeamModel = require('../toko_team/Model')
 const TokoCartModel = require('../toko_cart/Model')
 const TokoTokoOnlineModel = require('../toko_toko_online/Model')
 const { PostCode } = require('../../utils/services')
+const { paymentProcessSendOtpService, paymentProcessValidateOtpService, purchaseorderCheckStatusSendOtp, purchaseorderCheckStatusValidateOtp } = require('../rp_otp/services')
+const { generateRandomNumber } = require('../../utils/services/supportServices')
 // import { create } from 'apisauce'
 const Apisauce = require('apisauce')
 const fetchAllData = async (args, context) => {
@@ -229,6 +231,8 @@ const checkoutProcess = async (args, context) => {
     const totalProductAmount = allOpenCart.map(v => v.amount).reduce((a, b) => a + b, 0) // args.total_amount
     console.log('totalProductAmount===>', totalProductAmount)
 
+    const shippinAmount = !_.isEmpty(args.shipping_amount) ? parseInt(args.shipping_amount) : 0
+
     const dataPo = {}
     dataPo.full_name = args.full_name
     dataPo.phone_number = args.phone_number
@@ -236,14 +240,14 @@ const checkoutProcess = async (args, context) => {
     dataPo.session_id = sessionId
     dataPo.device_id = args.device_id
     dataPo.shipping_address = args.shipping_address
-    dataPo.shipping_amount = args.shipping_amount
+    dataPo.shipping_city = args.shipping_city
+    dataPo.shipping_province = args.shipping_province
+    dataPo.shipping_currier = args.shipping_currier
+    dataPo.shipping_postal_code = args.shipping_postal_code
+    dataPo.shipping_amount = shippinAmount
     dataPo.total_product_amount = totalProductAmount
-    dataPo.total_amount = totalProductAmount
-    dataPo.unique_code = 123
-    if (!_.isEmpty(args.shipping_amount)) {
-      dataPo.total_amount = totalProductAmount + args.shipping_amount // args.total_amount
-      dataPo.shipping_amount = args.shipping_amount
-    }
+    dataPo.unique_code = generateRandomNumber(3)
+    dataPo.total_amount = parseInt(totalProductAmount) + parseInt(dataPo.unique_code) + shippinAmount
     dataPo.cart_id = allOpenCart.map(v => '' + v._id)
     dataPo.toko_id = tokoId
     if (myUserId) dataPo.user_id = myUserId
@@ -286,6 +290,58 @@ const checkoutProcess = async (args, context) => {
     return { status: 400, error: err.message }
   }
 }
+const paymentProcessSendOtp = async (args, context) => {
+  try {
+    const otp = generateRandomNumber(4)
+    const paymentProcessSendOtpServiceResp = await paymentProcessSendOtpService({
+      email: args.email,
+      emailBody: `Tolong dicatat Nomor transaksi anda: ${args.session_id}. Lalu gunakan otp berikut, untuk melakukan validasi email.
+      otp: ${otp}`,
+      otpString: otp
+    })
+    if (paymentProcessSendOtpServiceResp.status !== 200) throw new Error('Gagal kirim otp')
+    return { status: 200, success: 'Berhasil kirim otp', otpRefNum: paymentProcessSendOtpServiceResp.otpRefNum }
+  } catch (e) {
+    return { status: 400, error: e.message }
+    // throw new Error('Gagal kirim email untuk validasi alamat email.')
+  }
+}
+const purchaseorderCheckStatusRequestOtp = async (args, context) => {
+  try {
+    // toko po detail
+    const tokoPoDetail = await EntityModel.findOne({ session_id: args.trxid, email: args.email }).populate({ path: 'cart_id', populate: { path: 'product_id' } })
+    if (_.isEmpty(tokoPoDetail)) throw new Error('Transaksi tidak ditemukan.')
+    const otp = generateRandomNumber(4)
+    const purchaseorderCheckStatusRequestOtpResp = await purchaseorderCheckStatusSendOtp({
+      email: args.email,
+      emailBody: `Gunakan otp berikut, untuk melakukan validasi email.
+      otp: ${otp}`,
+      otpString: otp
+    })
+    if (purchaseorderCheckStatusRequestOtpResp.status !== 200) throw new Error('Gagal kirim otp')
+    return { status: 200, success: 'Berhasil kirim otp', otpRefNum: purchaseorderCheckStatusRequestOtpResp.otpRefNum }
+  } catch (e) {
+    return { status: 400, error: e.message }
+    // throw new Error('Gagal kirim email untuk validasi alamat email.')
+  }
+}
+const purchaseorderCheckStatus = async (args, context) => {
+  try {
+    const tokoPoDetail = await EntityModel.findOne({ session_id: args.trxid, email: args.email }).populate({ path: 'cart_id', populate: { path: 'product_id' } })
+    if (_.isEmpty(tokoPoDetail)) throw new Error('Purchase Failed.')
+    // validasi otp
+    const purchaseorderCheckStatusValidateOtpResp = await purchaseorderCheckStatusValidateOtp(args.otp, tokoPoDetail.email, args.otpRefNum)
+    console.log('purchaseorderCheckStatusValidateOtpResp===>', purchaseorderCheckStatusValidateOtpResp)
+    if (purchaseorderCheckStatusValidateOtpResp.status !== 200) {
+      const er = purchaseorderCheckStatusValidateOtpResp.error
+      throw new Error(er)
+    }
+    return { status: 200, success: 'Berhasil kirim otp', data_detail: tokoPoDetail }
+  } catch (e) {
+    return { status: 400, error: e.message }
+    // throw new Error('Gagal kirim email untuk validasi alamat email.')
+  }
+}
 const paymentProcess = async (args, context) => {
   const session = await EntityModel.db.startSession()
   session.startTransaction()
@@ -317,6 +373,19 @@ const paymentProcess = async (args, context) => {
     const nowDateTime = new Date()
     const tz = new Date().toString().match(/([-\+][0-9]+)\s/)[1]
     const formatedDateTime = `${nowDateTime.getFullYear()}-${('' + nowDateTime.getMonth()).padStart(2, '0')}-${('' + nowDateTime.getDate()).padStart(2, '0')} ${('' + nowDateTime.getHours()).padStart(2, '0')}:${('' + nowDateTime.getMinutes()).padStart(2, '0')}:${('' + nowDateTime.getSeconds()).padStart(2, '0')} ${tz}`
+
+    // validasi otp
+    try {
+      const paymentProcessValidateOtpServiceResp = await paymentProcessValidateOtpService(args.otp, tokoPoDetail.email, args.otpRefNum)
+      console.log('paymentProcessValidateOtpServiceResp===>', paymentProcessValidateOtpServiceResp)
+      if (paymentProcessValidateOtpServiceResp.status !== 200) {
+        const er = paymentProcessValidateOtpServiceResp.error
+        throw new Error(er)
+      }
+    } catch (e) {
+      console.log('e===>', e)
+      throw new Error('Gagal validasi otp')
+    }
 
     var bodyHit = {
       transmission_date_time: formatedDateTime,
@@ -504,5 +573,8 @@ module.exports = {
   ['doDelete' + entity]: doDeleteData,
   checkoutProcess,
   paymentProcess,
-  getDetailDataBySessionId
+  getDetailDataBySessionId,
+  paymentProcessSendOtp,
+  purchaseorderCheckStatusRequestOtp,
+  purchaseorderCheckStatus
 }
