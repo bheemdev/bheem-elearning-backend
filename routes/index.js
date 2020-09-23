@@ -17,20 +17,22 @@ router.get('/', function (req, res, next) {
   res.render('backoffice/index', { title: 'Express' })
 })
 router.get('/renderfile/:filename', (req, res, next) => {
-  res.sendFile(pathmodule.join(__dirname + '/../uploadfile/' + req.params.filename))
+  res.sendFile(pathmodule.join(__dirname, '..', '..', 'uploadfile', req.params.filename))
   // res.sendFile(__dirname + './uploadfile/1595349658069.png')
 })
 router.get('/tokoonline/javascript-sdk/:module', (req, res, next) => {
   var marketPlinkHost = config.get('marketPlinkHost')
   var referer = req.header('Referer')
-	console.log('referer==>', referer)
+  console.log('referer==>', referer)
   // var origin = 'http://dev.plink.co.id'
   var origin = req.get('origin') || referer || ''
   // get toko id by origin url
   // var tokoId = '5f3373db203efa581d2354a2'
   // var tokoId = req.query.id
   console.log('origin=====>', origin)
-  TokoTokoOnlineModel.findOne({ website: origin }, (err, doc) => {
+  var arr = origin.split('/')
+  var website = arr[0] + '//' + arr[2]
+  TokoTokoOnlineModel.findOne({ website: { $regex: '.*' + website + '.*' } }, (err, doc) => {
     if (!origin.includes(marketPlinkHost) && (err || !doc)) return res.send('error')
     console.log('doc====>', doc)
     var tokoId = '' + (doc || {})._id
@@ -65,7 +67,7 @@ router.post('/uploadfile', (req, res, next) => {
       const bodyAt = await jwt.verify(accesstoken, config.get('privateKey'))
       const { user_id: userId } = bodyAt
       const fileType = type.split('/').pop()
-      const newPath = `./uploadfile/${now}.${fileType}`
+      const newPath = pathmodule.join(__dirname, '..', '..', 'uploadfile', `${now}.${fileType}`)
       console.log('newPath===>', newPath)
       var source = fs.createReadStream(path)
       var dest = fs.createWriteStream(newPath)

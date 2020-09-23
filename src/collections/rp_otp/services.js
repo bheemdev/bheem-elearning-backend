@@ -518,7 +518,7 @@ const changePasswordViaForgetPasswordService = async (otp, password, email, otpR
 // }
 
 const expireOtpChecker = async ({ getOtpTime, otp }) => {
-  const maximumTime = 120000
+  const maximumTime = 900000 // 15 menit otp
 
   const createdAt = parseInt(getOtpTime)
   console.log(createdAt)
